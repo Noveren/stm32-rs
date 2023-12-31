@@ -3,12 +3,24 @@ default:
     just --list
 
 info:
-    arm-none-eabi-size ./target/thumbv7m-none-eabi/release/blinky
-
-objcopy:
-    arm-none-eabi-objcopy ./target/thumbv7m-none-eabi/release/blinky ./target/blinky.bin -O binary
-    arm-none-eabi-size ./target/thumbv7m-none-eabi/release/blinky
     @stat --format=%s ./target/blinky.bin
+
+objcopyd:
+    cargo size --bin blinky
+    cargo objcopy --bin blinky -- -O binary ./target/blinky.bin
+    @stat --format=%s ./target/blinky.bin
+
+objcopyr:
+    cargo build --release
+    cargo size --bin blinky --release
+    cargo objcopy --bin blinky --release -- -O binary ./target/blinky.bin
+    @stat --format=%s ./target/blinky.bin
+
+asmd:
+    cargo rustc -- --emit asm
+
+asmr:
+    cargo rustc --release -- --emit asm
 
 install: 
     st-info --probe
