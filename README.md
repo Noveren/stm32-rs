@@ -107,23 +107,55 @@ fn main() -> ! {
 
 ## 0x03 PAC 使用模式
 
-在硬件层面上，MCU 具体外设只有一个，在软件层面上，采用 **单例模式**，也就是说外设只能存在一个实例；
+```rust
+struct Peripherals {
+    // pub PPP: PPP,          // 各种外设成员
+}
+```
 
 ```rust
-let dp = pac::Peripheral::take().unwrap();
-// 获得 Peripheral 单例；结合所有权
+impl Peripherals {
+    #[cfg(feature = "critical-section")]
+    pub fn take() -> Option<Self>;
+    
+    pub unsafe fn steal() -> Self;
+}
 ```
 
-
-
-
-
-
-
+```rust
+let dp = pac::Peripheral::take();   // 一般不需要 mut（取决于内部实现）
 ```
-Peripheral_Handle.Perpheral_Register_Name.Operation
 
-Operation ::= "read" | "modify" | "write"
+类型 `Peripherals` 为单例类型，可以通过 `take` 类型函数 **安全单例化**，采取的方法为检查 `static mut DEVICE_PERIPHERALS: bool = false;` 全局变量标志，内部调用 **不安全实例化** 的 `steal` 类型函数（内部置位 `DEVICE_PERIPHERALS`）
+
+`Peripherals` 单例以 **所有非内核外设的寄存器** 为成员，并作为访问这些寄存器的句柄 Handle 被使用，模式如下为 `peripherals.PPP.register.operation`
+
+**寄存器获取**：所有成员 PPP 的具体外设名称、具体 register 名称、具体 register 某位名称都在 SVD 文件中定义，一般与相应 MCU 参考手册中命名一致，且都采用 **`const fn` 的函数模式**，进行零成本的类型转换
+
+**寄存器访问**：对于 `.register()` 返回的寄存器类型，基本的操作方式如下
+
+```rust
+fn reset(&self)              // 重置寄存器的所有位
+fn read(&self) -> R<REG>     // 继续通过链式调用选择寄存器的位
+```
+
+```rust
+fn write(&self, f: F)        // 写
+where
+	F: FnOnce<&mut W<REG>) -> &mut W<REG>
+
+// 调用时传入匿名参数 |w| ...
+// w 通过 不断链式调用 选择寄存器的位、修改方法
+// 调用一次修改方法后，又可以继续选择寄存器的其他位
+```
+
+```rust
+fn modeify<F>(&self, f: F)    // 修改：读并写
+where
+	for<'w> F: FnOnce(&R<REG>, &'w mut W<REG>) -> &'w mut W<REG>
+
+// 调用时传入匿名函数 |r, w| ...
+// r 表示寄存器，可以用于读取某些位
 ```
 
 

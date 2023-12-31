@@ -19,9 +19,7 @@ use stm32f103::{self as pac};
 
 #[cortex_m_rt::entry]
 fn main() -> ! {
-    // let mut cp = cortex_m::Peripherals::take().unwrap();
-    // cp.SYST.disable_interrupt();
-
+    // PB4 默认作为 JTAG 引脚，无法拉低，需要配置为只采用 SWD 模式
     let dp = pac::Peripherals::take().unwrap();
 
     dp.RCC.apb2enr().write(|w| w
