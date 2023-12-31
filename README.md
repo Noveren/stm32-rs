@@ -75,6 +75,19 @@ path = "../stm32f103"
 features = ["rt", "critical-section"] 	    # 注意开启；第二个缺少将导致没有 take 方法
 ```
 
+```toml
+# .cargo/config.toml
+[target.thumbv7m-none-eabi]
+rustflags = [
+  "-C", "link-arg=-Tlink.x",
+]
+
+[build]
+target = "thumbv7m-none-eabi"
+```
+
+
+
 在 `main.rs` 中，需要为 `cortex-m-rt` 提供程序入口，以及为 Rust 提供 `panic_handler`
 
 ```rust
@@ -158,11 +171,60 @@ where
 // r 表示寄存器，可以用于读取某些位
 ```
 
+## 0x04 Cortex-m 内核
 
+**`cortex-m`**：Cortex-M 处理器的低层级访问接口，如内核外设访问、内核寄存器访问、中断操作方法、Cortex-M 特殊指令的安全封装；另外还有其他需要通过条件编译打开的特性：
 
-  
++ `inline-asm`：当该特性允许时，所有在 `asm` 和 `register` 模块中的实现都将使用内联汇编宏 `asm!`，而不是目前使用的外部汇编器；内联汇编宏的好处一是减少开销，二是一些 `register` 中的 API 只能在内联汇编实现时可用；缺陷是要求 Rust 的版本在 1.59 以上；**在未来的 0.8 及更高版本中，这个特性将总是允许**
++ `critical-section-single-core`：该特性基于失能全局中断，适用于 **单核** 目标的 `critical-section` crate 的一些实现；注意不要在多核目标或非特权代码中使用
++ `cm7-r0p1`：Cortex-M7 相关功能支持
++ `linker-plugin-lto`：高级链接特性支持
 
+该 crate 同样通过 `Peripherals` 的方式，类似于 PAC，提供内核外设的访问；
 
+另外，在构建时，该 crate 的 `build.rs` 将检测编译 Cargo 配置的 `target` 的以 `thumb` 开头的值，如 `thumbv7m-none-eabi`，并按照具体内容向 `rust-cfg` 提供参数
+
+**`cortex-m-rt`**：Cortex-M MCU的 `startup code` 和 `minimal runtime`；这个 crate 包含构建 Cortex-M MCU `no_std` 应用所需的所有部分：
+
+**链接脚本**：定义程序在存储器中的布局，特别是填充内存空间中规定位置的中断向量表，从而设备可以正确的启动，以及分派 `exception` （处理器）和 `interrupt`（微控制器）
+
++ **`memory.x`**：FLASH 和 RAM 都不属于内核外设，因此需要用户提供（一般在项目根目录）下提供 `memory.x` 文件，并在其中定义 FLASH 和 RAM 的起始地址和长度
+    另外 `memory.x` 中还可以可选的提供 `_stack_start` 和 `_stext` 符号
+
+```ld
+MEMORY
+{
+	FLASH : ORIGIN = 0x08000000, LENGTH = 64K
+	RAM : ORIGIN = 0x20000000, LENGTH = 20K
+}
+```
+
++ **`device.x`**：当 `device` 特性启用时，用户需要通过 `device.x` 提供中断向量表的填充地址，该文件在使用 `svd2rust` 时将会自动生成；当 `device` 特性未启用时，或中断向量表未完全填充且 `svd2rust` 生成库启用 `rt` 时，`cortex-m-rt` 将自动填充默认值
+    中断向量表是指定过程或函数的地址；在 C 项目中，一般规定中断函数的名称，并采用 weak 定义为默认 Handler；在 `cortex-m-rt` 中，通过 `device.x` 的 `PROVICDE` 功能实现 C 项目中类似的效果；
+    虽然 `cortex-m-rt` 提供了 `#[interrupt]` 属性宏用于对用户中断函数进行注释，但是由于不同微控制器拥有不同狭义中断（非异常），因此需要通过 PAC **重导出** 后使用
+    另外为了使用 `device.x`，PAC 库的 `build.rs` 还得做一些处理，但是总之，PAC 的相关任务交给 `svd2rust` 即可
++ **`link.x`**：`cortex-m-rt` 提供了 `link.x.in` 链接脚本模版，编译时将会整合 `memory.x` 和 `device.x` 以及代码中的相关内容，生成 `link.x` 送入链接器，因此在配置 Cargo 时需要提供
+
+```toml
+[target.thumbv7m-none-eabi]
+rustflags = [
+  "-C", "link-arg=-Tlink.x",
+]
+```
+
+**启动代码**：在 **进入 entry point 前**，在 RAM 中初始化静态变量，以及启用特有功能
+
++ **`#[entry]`**：将一个函数指定为应用入口
+
+```rust
+#[entry]
+fn main() -> ! {
+    loop { }
+}
+```
+
++ **`#[expection]`**：注释异常（内核外设或机制产生的中断）函数；异常的 Handler 默认是无限循环
++ **`#[pre_init]`**：在初始化静态变量之前执行的函数，类似于 C 中的 `SystemInit`
 
 
 
