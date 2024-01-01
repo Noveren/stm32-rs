@@ -251,6 +251,60 @@ fn main() -> ! {
 + **`#[expection]`**：注释异常（内核外设或机制产生的中断）函数；异常的 Handler 默认是无限循环
 + **`#[pre_init]`**：在初始化静态变量之前执行的函数，类似于 C 中的 `SystemInit`
 
+## 0x05 封装与抽象
+
+一方面，svd2rust 生成的 PAC 库只提供了寄存器级的操作，用户进行配置时需要频繁查阅手册；另一方面，由于 Rust 将安全性融入到了语法中，像 C 项目中常用的代码风格在 Rust 中通常是 Unsafe 的，如全局变量，为了达成某种效果，可能需要非常繁琐的写法，并且对用户的 Rust 水平有较高要求
+
+**`embedded hal`** 是一个由 HAL team 维护的 crate，其利用 Rust 的 Trait 机制，定义了非常强大的概念抽象；一款 MCU 的 HAL crate 可以通过实现 `embedded hal` 来设计，若业务代码只基于这样的 HAL 开发，那么这份业务代码就很容易在不同 MCU 之间移植；同时，相同的概念抽象能够约束具体 MCU 的 HAL 的设计，降低用户的学习成本
+
+```shell
+stm32f1xx-hal <- 实现 - embedded_hal
+              <- 依赖 - PAC, ......
+```
+
+`stm32f1xx-hal` 是一个实现了 `embedded_hal` 的适用于 STM32F1xx 的 HAL；基于 HAL 开发和基于 PAC 开发有所不同，以下仅简单介绍，具体使用教程可查阅 [github 仓库](https://github.com/stm32-rs/stm32f1xx-hal)
+
+```rust
+let dp = pac::Peripherals::take().unwrap();
+
+// 在 stm32f1xx-hal 中为 pac 中的 PPP 类型实现 Trait - PPPExt
+// 因此相对于原始 PAC，从 stm32f1xx-hal 中导出的 PAC 的 pac::PPP 有更多方法
+let mut falsh = dp.FLASH.constrain();
+let mut rcc   = dp.RCC.constrain();
+let mut afio  = dp.AFIO.constrain();
+
+// 获取、访问方式与 PAC 库有所不同
+let clocks = rcc.cfgr.freeze(&mut flash.acr);
+```
+
+项目若要使用 `stm32f1xx-hal`，Cargo.toml 配置方式如下
+
+```toml
+[dependencies]
+cortex-m     = "0.7.6"
+cortex-m-rt  = "0.7.1"
+panic-halt   = "0.2.0"				# 可选
+embedded-hal = "0.2.7"              # 可选
+nb           = "1"                  # 可选
+
+[dependencies.stm32f1xx-hal]
+version = "0.10.0"
+# rt -> stm32f1/rt -> cortex-m-rt/device
+# stm32f103 具体型号
+# medium FLASH/SRAM 容量；stm32f1xxXYxx Y 指容量，Y = 8,B => medium
+features = ["rt", "stm32f103", "medium"]
+```
+
+另外，介绍一下 **`nb`**：最小化和可重用的非阻塞 IO 层；这个 crate 的最终目标是 **代码复用**；基于 `nb` 用户编写的核心 IO API 可以被转换为阻塞模式或非阻塞模式，进一步的，这些 API 不局限于具体的异步模型，可以工作于 `futures` 模型或 `async/await` 模型；`stm32f1xx-hal` 的一些 API 就用到了 `nb`，如
+
+```rust
+nb::block!(timer.wait()).unwrap();            // 将 timer.wait() 转换为阻塞模式执行
+```
+
+
+
+
+
 
 
 
