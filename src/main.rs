@@ -19,12 +19,21 @@ use stm32f103::{self as pac};
 
 #[cortex_m_rt::entry]
 fn main() -> ! {
-    // PB4 默认作为 JTAG 引脚，无法拉低，需要配置为只采用 SWD 模式
     let dp = pac::Peripherals::take().unwrap();
+
+    dp.RCC.apb1enr().write(|w| w
+        .pwren().set_bit()
+    );
 
     dp.RCC.apb2enr().write(|w| w
         .iopben().set_bit()
+        .afioen().set_bit()
     );
+
+    // PB4 默认作为 JTAG 引脚，无法拉低，需要配置为只采用 SWD 模式
+    dp.AFIO.mapr().write(|w| unsafe { w.
+        swj_cfg().bits(0b010)
+    });
 
     dp.GPIOB.crl().write(|w| unsafe { w
         .mode4().bits(0b01)
@@ -34,5 +43,14 @@ fn main() -> ! {
         .odr4().clear_bit()
     );
 
-    loop {}
+    let mut i: u32 = 0;
+    loop {
+        while i <= 100_0000 {
+            i += 1;
+        }
+        i = 0;
+        dp.GPIOB.odr().modify(|r, w| w
+            .odr4().bit(!r.odr4().bit())
+        );
+    }
 }

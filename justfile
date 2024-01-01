@@ -22,6 +22,9 @@ asmd:
 asmr:
     cargo rustc --release -- --emit asm
 
+openocd:
+    openocd -f ./stm32f103c8t6.cfg
+
 install: 
     st-info --probe
     st-flash write ./target/blinky.bin 0x08000000
