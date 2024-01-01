@@ -14,8 +14,7 @@ fn panic(_info: &PanicInfo) -> ! {
     }
 }
 
-use stm32f103::{self as pac};
-// use cortex_m;
+use stm32f103 as pac;
 
 #[cortex_m_rt::entry]
 fn main() -> ! {

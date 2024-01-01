@@ -1,30 +1,22 @@
+name := "blinky"
+root  := "./target"
 
 default:
     just --list
 
-info:
-    @stat --format=%s ./target/blinky.bin
-
-objcopyd:
-    cargo size --bin blinky
-    cargo objcopy --bin blinky -- -O binary ./target/blinky.bin
-    @stat --format=%s ./target/blinky.bin
-
-objcopyr:
-    cargo build --release
-    cargo size --bin blinky --release
-    cargo objcopy --bin blinky --release -- -O binary ./target/blinky.bin
-    @stat --format=%s ./target/blinky.bin
-
-asmd:
-    cargo rustc -- --emit asm
-
-asmr:
-    cargo rustc --release -- --emit asm
+install: 
+    st-info --probe
+    st-flash write ./target/blinky.bin 0x08000000
 
 openocd:
     openocd -f ./stm32f103c8t6.cfg
 
-install: 
-    st-info --probe
-    st-flash write ./target/blinky.bin 0x08000000
+set positional-arguments
+
+# mode := -r | -d
+build mode:
+    cargo objcopy --bin {{name}} {{ if mode == "-r" {"--release"} else {""} }} -- -O binary {{root}}/{{name + ".bin"}}
+    rust-size {{root + "/thumbv7m-none-eabi/"}}{{if mode == "-r" {"release/"} else {"debug/"} }}{{name}}
+
+asm mode:
+    cargo rustc --bin {{name}} {{ if mode == "-r" {"--release"} else {""} }} -- --emit asm

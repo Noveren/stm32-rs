@@ -39,6 +39,12 @@ $ rm src/lib.rs
 $ form -i lib.rs -o src && rm lib.rs    # 分割原始 lib.rs
 ```
 
+```shell
+# svd2rust 可选项
+--reexport-core-peripherals     cortex-m;
+--reexport-interrupt            cortex-m-rt;
+```
+
 查阅 svd2rust 的 [文档](https://docs.rs/svd2rust/latest/svd2rust/)，完成代码生成后还需要配置 crate 的依赖；参考配置如下：
 
 ```toml
@@ -85,8 +91,6 @@ rustflags = [
 [build]
 target = "thumbv7m-none-eabi"
 ```
-
-
 
 在 `main.rs` 中，需要为 `cortex-m-rt` 提供程序入口，以及为 Rust 提供 `panic_handler`
 
@@ -171,7 +175,26 @@ where
 // r 表示寄存器，可以用于读取某些位
 ```
 
+**注意**：寄存器会按照 `read-only`、``write-only`、`read-write` 暴露部分访问接口
+
+**中断枚举**：SVD 文件描述了 MCU 的中断，svd2rust 生成的 PAC 中导出了 MCU 中断的枚举 `Interrupt`，可以配合 `cortex-m` 进行使用：
+
+```rust
+use cortex_m::peripheral::Peripherals;
+use stm32f30x::Interrupt;
+
+let p = Peripherals::take().unwrap();
+let mut nvic = p.NVIC;
+
+nvic.enable(Interrupt::TIM2);
+nvic.enable(Interrupt::TIM3);
+```
+
+**`rt`** 特性：当该特性允许时，PAC 将会启用 `cortex-m-rt` 的 `device` 特性，即提供 `device.x` 用于生成链接脚本；另外，如果使用 svd2rust 进行转换时在命令行传入 `--reexport-interrupt` 选项，那么 PAC 还会提供 `interrupt!`（非 Cortex-M 及 MSP430 的 MCU）或 `#[interrupt]` 用于注册中断服务函数
+
 ## 0x04 Cortex-m 内核
+
+### 1. cortex-m
 
 **`cortex-m`**：Cortex-M 处理器的低层级访问接口，如内核外设访问、内核寄存器访问、中断操作方法、Cortex-M 特殊指令的安全封装；另外还有其他需要通过条件编译打开的特性：
 
@@ -183,6 +206,8 @@ where
 该 crate 同样通过 `Peripherals` 的方式，类似于 PAC，提供内核外设的访问；
 
 另外，在构建时，该 crate 的 `build.rs` 将检测编译 Cargo 配置的 `target` 的以 `thumb` 开头的值，如 `thumbv7m-none-eabi`，并按照具体内容向 `rust-cfg` 提供参数
+
+### 2. cortex-m-rt
 
 **`cortex-m-rt`**：Cortex-M MCU的 `startup code` 和 `minimal runtime`；这个 crate 包含构建 Cortex-M MCU `no_std` 应用所需的所有部分：
 
