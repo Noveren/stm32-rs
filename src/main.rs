@@ -76,12 +76,7 @@ fn main() -> ! {
         cp.SYST.csr.write(0b101);
     }
 
-    // let mut i: u32 = 0;
     loop {
-        // while i <= 100_0000 {
-        //     i += 1;
-        // }
-        // i = 0;
         if cp.SYST.has_wrapped() {
             dp.GPIOB.odr().modify(|r, w| w
                 .odr4().bit(!r.odr4().bit())

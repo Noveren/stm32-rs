@@ -6,7 +6,7 @@ default:
 
 install: 
     st-info --probe
-    st-flash write ./target/blinky.bin 0x08000000
+    st-flash write {{root}}/{{name + ".bin"}} 0x08000000
 
 openocd:
     openocd -f ./stm32f103c8t6.cfg
