@@ -301,6 +301,164 @@ features = ["rt", "stm32f103", "medium"]
 nb::block!(timer.wait()).unwrap();            // 将 timer.wait() 转换为阻塞模式执行
 ```
 
+## 0x06 烧录与调试
+
+### 1. 概述
+
+烧录指的是将编译好的机器代码写入到嵌入式系统的存储器中，完成配置后，这些机器代码可以被 CPU 读取并执行；烧录的方式可以分为以下三种：
+
++   **在电路编程 ICP**：使用嵌入式系统的烧录接口电路或机制，如 以Cortex-M3 内核的 MCU 通常支持的 SWD 或 JTAG 调试接口，配合特定的适配器进行烧录
++   **在系统编程 ISP**：通过如 USB、UART、SPI 等通讯接口，利用微控制器自身已有程序，如 BootLoader，引导代码写入存储器
++   **在应用编程 IAP**：从结构上将Flash存储器映射为两个存储体，当运行一个存储体上的用户程序时，可对另一个存储体重新编程，之后将程序从一个存储体转向另一个，如 **固件自动更新**
+
+**ICP** 通常使用 MCU 的调试系统来实现，对于 MCU 来说，主要是片上电路支持的调试协议，片上调试接口通过调试器进行使用，PC 上又可以通过软件来使用调试器对微控制器进行调试，常用协议如下：
+
++   **JTAG**：全称 Joint Test Action Group，是一种国际标准测试协议（IEEE 1149.1兼容），主要用于芯片内部测试，目前高级器件，如 MCU、DSP、FPGA 等，都支持该协议
++   **SWD**：全称 Serial Wire Debug，是一种 32 位 ARM 内核调试器的一种同步调试协议，相对于 JTAG 更为简单，除了电源线和地线外，`SWDIO`、`SWCLK` 分别作为数据线和时钟线
+
+ST-LINK 由 ST 意法半导体官方推出调试器和烧录器，用于 STM8 和 STM32 微控制器的开发，向上通过 USB 连接 PC，向下通过 SWIM/SWD/JTAG 连接微控制器。除了官方推出的 ST-LINK 设备外，还有淘宝上 ST-LINK V2 售卖的 U 盘型调试器，便宜可用
+
+ST-LINK 可以通过 Keil IDE 使用，也可以通过开源的 [stlink](https://github.com/stlink-org/stlink) 工具集使用，还可以通过开源的 OpenOCD 使用
+
++   **stlink**：基于 ST-LINK 调试器的开源工具集，适用于 STM32 的调试和编程
+
+    ```shell
+    # stlink 相关工具
+    $ st-info --probe								# chip information tool
+    $ st-flash write <file.bin> 0x08000000			# download
+    ```
+
++   **OpenOCD**：全称 Open On-Chip Debugger，旨在为嵌入式目标设备提供调试、系统内编程、边界扫描的功能，对于不同调试协议，需要配合相应的硬件调试器使用；OpenOCD 能够提供：烧录、GDB 服务端、Semihosting 等等功能
+
+    ```
+    # ./stm32f103c8t6.cfg
+    source [find interface/stlink-v2.cfg]
+    source [find target/stm32f1x.cfg]
+    
+    # halt target after gdb attached
+    $_TARGETNAME configure -event gdb-attach { halt }
+    ```
+
+    ```shell
+    $ openocd -f ./stm32f103c8t6.cfg
+    ```
+
+    OpenOCD 能够启动一个 GDB 服务器，默认端口号为 `localhost:3333`，可以通过 arm-none-eabi-gdb GDB 客户端进行连接；命令行 GDB 学习成本相对较高，在 VSCode 中可以使用 Cortex-Debug 插件进行调试，参考配置如下：
+
+    ```json
+    {
+        "version": "0.2.0",
+        "configurations": [
+            {
+                "name": "Cortex Debug",
+                "cwd": "${workspaceFolder}",
+                "executable": "./build/demo.elf",
+                "request": "launch",
+                "type": "cortex-debug",
+                "runToEntryPoint": "main",
+                "servertype": "external",
+                "gdbTarget": "localhost:3333",
+                "gdbPath": "arm-none-eabi-gdb"
+            }
+        ]
+    }
+    ```
+
+**注**：Semihosting 是一种机制：让嵌入式设备在宿主环境中执行输入输出，即在宿主控制台上输入日志信息，便于调试。该机制依赖于硬件调试器，如 ST-Link，以及 OpenOCD
+
+### 2. OpenOCD
+
+```shell
+$ openocd --help
+Open On-Chip Debugger 0.12.0 (2023-01-14-23:37)
+--help       | -h       display this help
+--version    | -v       display OpenOCD version
+--file       | -f       use configuration file <name>
+--command    | -c       run <command>
+--log_output | -l       redirect log output to file <name>
+```
+
+OpenOCD 的启动需要读取一个配置文件 `.cfg`，该文件中批量给出了 OpenOCD 的配置指令；
+
+OpenOCD 的启动需要执行一系列配置指令，这些指令可以通过 `-c` 传递，也可以从 `.cfg` 配置文件中读取；当无参数启动时，OpenOCD 会检查并使用当前目录下名为 `openocd.cfg` 的文件，用户可以通过 `--file/-f` 指定配置文件；OpenOCD 提供了常用 `interface`、`target`、`board` 的配置文件
+
+```shell
+$ openocd -f interface/stlink.cfg -f target/stm32f1x.cfg
+```
+
+OpenOCD  在成功启动后将作为 **服务器** 运行；一旦 OpenOCD 作为一个服务器运行，它将会等待客户端（ Telnet、GDB、RPC）的连接，并且会处理来自这些客户端的命令；OpenOCD 为 GDB 默认提供的端口号为 `localhost:3333`
+
+```shell
+$ arm-none-eabi-gdb
+(gdb) target extended-remote :3333
+(gdb) tar ext :3333
+(gdb) file <elf>
+(gdb) load
+(gdb) continue
+(gdb) b main
+```
+
+```shell
+(gdb) monitor <openocd-run-stage-command>
+```
+
+**服务端指令**
+
+```shell
+help [command-name]                     # 帮助
+shutdown [error]                        # 关闭 OpenOCD Server
+echo [-n] string                        # -n 表示接在上一行后
+debug_level [n]                         # 改变调试等距 n ::= 0 | 1 | 2 | 3 | 4
+log_output [filename | "default"]       # 日志重定向；default is stderr
+```
+
+**目标状态接口**
+
+```shell
+halt [ms]
+wait_halt [ms]                          # wait for target to halt and enter debug mode
+reset
+reset run
+reset halt
+resume
+```
+
+**内存访问指令**
+
+**镜像载入指令**
+
+```shell
+dump_image <filename> <address> <size>          # 读出设备上现有镜像
+load_image                                      # 尝试失败
+```
+
+```shell
+monitor arm semihosting [enable | disable]
+monitor arm semihosting_redirect tcp localhost:3333      # TODO
+```
+
+Semihosting提供了一种机制，让CPU上的代码与主机通信并借助主机侧的功能。其核心原理就是，在CPU侧执行特定序列的指令，在主机侧识别这些指令，并采集参数，调用主机侧响应功能。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
